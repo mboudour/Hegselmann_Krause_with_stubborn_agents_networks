@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HK Stubborn-Agent Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: instrument panel. Controls left, network centre, readouts right; stacks on narrow screens. */
+  --paper: #f2f4f3;
+  --panel: #fbfcfb;
+  --ink: #17212a;
+  --muted: #5b6871;
+  --rule: #cdd6da;
+  --accent: #b2462e;
+  --good: #2f6f4f;
+  --warn: #9a6a12;
+  --display: "Spectral", "Georgia", serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #10161b; --panel: #161e24; --ink: #e2e8eb; --muted: #93a1aa;
+    --rule: #2b3842; --accent: #e27652; --good: #6fbf93; --warn: #e0b154; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #10161b; --panel: #161e24; --ink: #e2e8eb; --muted: #93a1aa;
+  --rule: #2b3842; --accent: #e27652; --good: #6fbf93; --warn: #e0b154; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 14px/1.45 var(--body); }
+header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; padding: 14px 20px 10px; border-bottom: 1px solid var(--rule); }
+header h1 { font: 600 22px/1.15 var(--display); margin: 0; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 70ch; }
+.app { display: grid; grid-template-columns: 290px minmax(0, 1fr) minmax(0, 0.95fr); gap: 14px; padding: 14px 20px 20px; min-height: calc(100% - 60px); }
+@media (max-width: 1180px) { .app { grid-template-columns: 290px minmax(0, 1fr); } .readouts { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .app { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; } }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; }
+aside { display: flex; flex-direction: column; gap: 12px; }
+h2 { font: 600 15px/1.2 var(--display); margin: 0 0 8px; letter-spacing: 0.01em; }
+label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
+select, input[type="number"] { width: 100%; font: 13px var(--body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 5px 6px; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.row { display: flex; gap: 8px; align-items: center; }
+.row > * { flex: 1; }
+.val { font: 12px var(--mono); color: var(--ink); min-width: 4.5em; text-align: right; flex: 0 0 auto; }
+button { font: 500 13px var(--body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+button:hover { border-color: var(--ink); }
+button.primary { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button:disabled, select:disabled, input:disabled { opacity: 0.45; cursor: not-allowed; }
+.seg { display: flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+.seg button { flex: 1; border: 0; border-radius: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.stage { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.viewbar { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.viewbar .seg { width: 440px; max-width: 100%; }
+.inl { display: inline-flex; gap: 6px; align-items: center; margin: 0; font-size: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 12px var(--mono); padding: 3px 8px; border: 1px solid var(--rule); border-radius: 999px; background: var(--panel); white-space: nowrap; }
+.chip b { font-weight: 500; }
+.chip.good { border-color: var(--good); color: var(--good); }
+.chip.warn { border-color: var(--warn); color: var(--warn); }
+.chip.crit { border-color: var(--accent); color: var(--accent); }
+canvas { display: block; width: 100%; }
+.netwrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.app.both .netwrap { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.vlab { display: none; font: 500 12px var(--body); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 4px; }
+.app.both .vlab { display: block; }
+.app.both { grid-template-columns: 290px minmax(0, 1fr); }
+.app.both .readouts { grid-column: 1 / -1; }
+@media (max-width: 1000px) { .app.both .netwrap { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .app.both { grid-template-columns: minmax(0, 1fr); } #net, #net2 { height: 420px; } }
+#net2 { height: 520px; border-radius: 4px; background: var(--paper); cursor: pointer; }
+#net { height: 520px; border-radius: 4px; background: var(--paper); cursor: pointer; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.timebar { display: flex; gap: 8px; align-items: center; }
+.timebar input { flex: 1; }
+.caption { color: var(--muted); font-size: 13px; margin: 6px 0 0; max-width: 75ch; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); margin-bottom: 10px; }
+.tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 6px 10px; color: var(--muted); }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabpanel[hidden] { display: none; }
+#traj, #plane { height: 420px; }
+.diag canvas { height: 118px; margin-bottom: 6px; }
+.diag h3, .notes h3 { font: 500 12px var(--body); color: var(--muted); margin: 6px 0 2px; text-transform: uppercase; letter-spacing: 0.06em; }
+.notes p { margin: 0 0 9px; max-width: 65ch; }
+.notes .ref { font: 12px var(--mono); color: var(--muted); }
+.inspect { font: 12px var(--mono); white-space: pre-wrap; color: var(--ink); margin: 0; }
+.hidden { display: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Hegselmann–Krause dynamics with stubborn agents</h1>
+  <p>Agents average the opinions of neighbours within the confidence bound σ; stubborn agents (squares) never move. In the opinion-space view each node sits at a current opinion and moves as agents update; agents holding the same opinion are drawn as one node, sized by and labelled with their number; the graph-layout view keeps the network fixed and colours nodes by opinion.</p>
+</header>
+
+<div class="app">
+  <aside>
+    <section class="card" aria-labelledby="h-scen">
+      <h2 id="h-scen">Scenario</h2>
+      <label for="scenario">Example or exploration</label>
+      <select id="scenario">
+        <optgroup label="Dynamics on larger networks">
+          <option value="sh_geo" selected>Four stubborn corners · geometric graph, 2-D, 150 agents</option>
+          <option value="sh_grid">Four stubborn corners · grid, 2-D, 144 agents</option>
+          <option value="sh_ws">Two stubborn poles · small world, 1-D, 100 agents</option>
+          <option value="sh_path">Two stubborn ends · path, 1-D, 40 agents</option>
+        </optgroup>
+        <optgroup label="Examples from the paper">
+          <option value="ex71">Ex. 7.1 · limit that is not a fixed point</option>
+          <option value="ex73">Ex. 7.3 · balanced agent in the plane</option>
+          <option value="ex74">Ex. 7.4 · slow first switch</option>
+          <option value="et">Ex. 7.5 · periodic orbit (Etesami–Touri)</option>
+          <option value="how">Ex. 7.5 · perpetual switching (Hegarty et al.)</option>
+          <option value="fj">Prop. 6.1 · large σ, Friedkin–Johnsen regime</option>
+        </optgroup>
+        <optgroup label="Explore">
+          <option value="random">Your own network</option>
+        </optgroup>
+      </select>
+      <div id="paramM" class="hidden">
+        <label for="m">Gap exponent m (stubborn agent at −1 + 4<sup>−m</sup>)</label>
+        <div class="row"><input id="m" type="range" min="1" max="12" step="1" value="4"><span class="val" id="mVal">4</span></div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="h-net" id="netControls">
+      <h2 id="h-net">Network</h2>
+      <label for="gtype">Graph</label>
+      <select id="gtype">
+        <option value="ws" selected>Watts–Strogatz (k = 4, p = 0.2)</option>
+        <option value="er">Erdős–Rényi (mean degree 4)</option>
+        <option value="ba">Barabási–Albert (m = 2)</option>
+        <option value="tree">Random tree</option>
+        <option value="grid">Grid</option>
+        <option value="cycle">Cycle</option>
+        <option value="path">Path</option>
+        <option value="star">Star</option>
+        <option value="complete">Complete graph</option>
+        <option value="geo">Random geometric</option>
+      </select>
+      <label for="n">Agents</label>
+      <div class="row"><input id="n" type="range" min="6" max="200" step="1" value="40"><span class="val" id="nVal">40</span></div>
+      <label>Opinion space</label>
+      <div class="seg" role="group" aria-label="Opinion dimension">
+        <button id="d1" aria-pressed="true">1-D line</button><button id="d2" aria-pressed="false">2-D plane</button>
+      </div>
+      <label for="sigma">Confidence bound σ</label>
+      <div class="row"><input id="sigma" type="range" min="0.02" max="1" step="0.01" value="0.25"><span class="val" id="sigmaVal">0.25</span></div>
+      <label for="ns">Stubborn agents</label>
+      <div class="row"><input id="ns" type="range" min="0" max="8" step="1" value="2"><span class="val" id="nsVal">2</span></div>
+      <label for="place">Stubborn opinions</label>
+      <select id="place">
+        <option value="random">Random</option>
+        <option value="extremes" selected>Opposite extremes</option>
+        <option value="common">All the same (Cor. 5.6)</option>
+      </select>
+      <label for="seed">Random seed</label>
+      <div class="row"><input id="seed" type="number" min="1" value="7"><button id="reseed" style="flex:0 0 auto">New</button></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-rule">
+      <h2 id="h-rule">Rule and arithmetic</h2>
+      <label for="conv">Neighbour condition</label>
+      <select id="conv">
+        <option value="le" selected>‖xᵢ − xⱼ‖ ≤ σ</option>
+        <option value="lt">‖xᵢ − xⱼ‖ &lt; σ</option>
+      </select>
+      <label for="arith">Arithmetic</label>
+      <select id="arith">
+        <option value="exact" selected>Exact rationals (1-D, ≤ 12 agents)</option>
+        <option value="float">Floating point</option>
+      </select>
+      <label for="horizon">Horizon (steps)</label>
+      <div class="row"><input id="horizon" type="range" min="40" max="1000" step="10" value="450"><span class="val" id="horizonVal">450</span></div>
+    </section>
+  </aside>
+
+  <main class="stage">
+    <div class="card">
+      <div class="viewbar"><div class="seg" role="group" aria-label="Main view"><button id="vBo" aria-pressed="true">Both side by side</button><button id="vOp" aria-pressed="false">Opinion space</button><button id="vGr" aria-pressed="false">Graph layout</button></div>
+        <label class="inl"><input id="flash" type="checkbox" checked> highlight switches</label></div>
+      <div class="chips" id="chips" aria-live="polite"></div>
+      <div class="netwrap"><div><div class="vlab">Opinion space</div><canvas id="net" aria-label="Network view: nodes placed by opinion or by graph layout"></canvas></div>
+        <div id="net2box" class="hidden"><div class="vlab">Graph layout</div><canvas id="net2" aria-label="Graph layout view: nodes coloured by opinion"></canvas></div></div>
+      <div class="legend">
+        <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="2"/></svg>listening (active)</span>
+        <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="1.6" stroke-dasharray="5 3"/></svg>one-way</span>
+        <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="1" stroke-dasharray="1 4" opacity=".6"/></svg>inactive</span>
+        <span style="color:var(--accent)"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="2" stroke-dasharray="6 3"/></svg>critical (distance = σ)</span>
+        <span style="color:var(--accent)"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="4" opacity=".7"/></svg>edge switching now</span>
+        <span><svg width="18" height="18"><circle cx="9" cy="9" r="8" fill="currentColor" opacity=".2"/><circle cx="9" cy="9" r="4" fill="none" stroke="currentColor"/></svg>halo = agent moving</span>
+        <span><svg width="12" height="12"><rect x="1" y="1" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2"/></svg>stubborn</span>
+        <span><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>trapped</span>
+        <span><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 2"/></svg>free</span>
+      </div>
+      <p class="caption" id="caption"></p>
+    </div>
+    <div class="card">
+      <div class="timebar">
+        <button class="primary" id="play" style="flex:0 0 auto">Play</button>
+        <button id="step" style="flex:0 0 auto">Step</button>
+        <button id="restart" style="flex:0 0 auto">To t = 0</button>
+        <input id="time" type="range" min="0" max="0" step="1" value="0" aria-label="Time">
+        <span class="val" id="timeVal">t = 0</span>
+      </div>
+      <label for="speed">Playback speed (steps per second)</label>
+      <div class="row"><input id="speed" type="range" min="1" max="40" step="1" value="6"><span class="val" id="speedVal">6</span></div>
+    </div>
+    <div class="card">
+      <h2>Selected agent</h2>
+      <pre class="inspect" id="inspect">Click a node in the network to inspect it.</pre>
+    </div>
+  </main>
+
+  <section class="card readouts" aria-label="Readouts">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-op" aria-selected="true" aria-controls="p-op">Opinions</button>
+      <button role="tab" id="tab-dg" aria-selected="false" aria-controls="p-dg">Diagnostics</button>
+      <button role="tab" id="tab-nt" aria-selected="false" aria-controls="p-nt">Notes</button>
+    </div>
+    <div class="tabpanel" id="p-op" role="tabpanel">
+      <canvas id="traj" aria-label="Opinion trajectories over time"></canvas>
+      <canvas id="plane" class="hidden" aria-label="Opinions in the plane"></canvas>
+      <div class="row" style="margin-top:8px">
+        <label style="margin:0;flex:0 0 auto" for="disks">σ-disks in the 2-D opinion view</label>
+        <input id="disks" type="checkbox" style="flex:0 0 auto">
+        <span style="flex:1"></span>
+      </div>
+      <p class="caption" id="opCaption"></p>
+    </div>
+    <div class="tabpanel diag" id="p-dg" role="tabpanel" hidden>
+      <h3>Truncated energy 𝒱(x(t))</h3><canvas id="cV"></canvas>
+      <h3>Largest step, log₁₀ maxᵢ ‖xᵢ(t+1) − xᵢ(t)‖</h3><canvas id="cS"></canvas>
+      <h3>Listening arcs; ticks mark changes of the interaction pattern</h3><canvas id="cA"></canvas>
+      <p class="caption" id="dgCaption"></p>
+    </div>
+    <div class="tabpanel notes" id="p-nt" role="tabpanel" hidden>
+      <div id="notes"></div>
+      <h3>Model</h3>
+      <p>Each regular agent i replaces its opinion by the average of its own and of its graph neighbours j with ‖xᵢ − xⱼ‖ ≤ σᵢ. Stubborn agents have σ = 0 and never move, but others listen to them. The paper proves that every trajectory converges when all regular agents share one bound (Theorem 5.1), and that the interaction graph stops changing after finitely many steps in dimension one (Theorem 5.7) and for almost every stubborn profile in higher dimensions (Theorem 5.5).</p>
+      <p>The energy 𝒱 is the sum over edges of min(‖xᵢ − xⱼ‖², σ²). With a common bound it decreases at every step (Lemma 3.1); with different bounds it need not.</p>
+      <p class="ref">Code for the paper's computations: github.com/mboudour/Hegselmann_Krause_with_stubborn_agents_networks</p>
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+/* ---------- exact rationals (BigInt) ---------- */
+const big = (v) => BigInt(v);
+function bgcd(a, b) { a = a < 0n ? -a : a; b = b < 0n ? -b : b; while (b) { [a, b] = [b, a % b]; } return a; }
+function Q(n, d = 1n) { if (d < 0n) { n = -n; d = -d; } const g = bgcd(n, d) || 1n; return { n: n / g, d: d / g }; }
+const qAdd = (a, b) => Q(a.n * b.d + b.n * a.d, a.d * b.d);
+const qSub = (a, b) => Q(a.n * b.d - b.n * a.d, a.d * b.d);
+const qDivInt = (a, k) => Q(a.n, a.d * big(k));
+const qAbs = (a) => ({ n: a.n < 0n ? -a.n : a.n, d: a.d });
+const qCmp = (a, b) => { const l = a.n * b.d, r = b.n * a.d; return l < r ? -1 : l > r ? 1 : 0; };
+function qNum(a) {
+  let n = a.n, d = a.d; const k = Math.max(n.toString().length, d.toString().length) - 300;
+  if (k > 0) { const p = 10n ** big(k); n /= p; d /= p; if (d === 0n) d = 1n; }
+  return Number(n) / Number(d);
+}
+const qFrom = (v, den = 1200) => Q(big(Math.round(v * den)), big(den));
+const qDigits = (a) => a.d.toString().length;
+
+/* ---------- seeded random ---------- */
+function rng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+/* ---------- graph generators ---------- */
+function addEdge(E, set, a, b) { if (a === b) return; const k = a < b ? a + "," + b : b + "," + a; if (!set.has(k)) { set.add(k); E.push(a < b ? [a, b] : [b, a]); } }
+function connect(n, E, set, R, pos) {
+  for (;;) {
+    const comp = components(n, E); if (comp.count === 1) return;
+    let best = null;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (comp.id[i] === 0 && comp.id[j] !== 0) {
+      const dd = pos ? Math.hypot(pos[i][0] - pos[j][0], pos[i][1] - pos[j][1]) : R();
+      if (!best || dd < best[0]) best = [dd, i, j];
+    }
+    addEdge(E, set, best[1], best[2]);
+  }
+}
+function components(n, E) {
+  const adj = Array.from({ length: n }, () => []); E.forEach(([a, b]) => { adj[a].push(b); adj[b].push(a); });
+  const id = new Array(n).fill(-1); let c = 0;
+  for (let s = 0; s < n; s++) if (id[s] < 0) { const st = [s]; id[s] = c; while (st.length) { const v = st.pop(); for (const w of adj[v]) if (id[w] < 0) { id[w] = c; st.push(w); } } c++; }
+  return { id, count: c };
+}
+function makeGraph(type, n, R, rad) {
+  const E = [], set = new Set(); let pos = null;
+  if (type === "path") { for (let i = 0; i < n - 1; i++) addEdge(E, set, i, i + 1); pos = Array.from({ length: n }, (_, i) => [0.5, 1 - i / (n - 1)]); }
+  else if (type === "cycle") for (let i = 0; i < n; i++) addEdge(E, set, i, (i + 1) % n);
+  else if (type === "star") for (let i = 1; i < n; i++) addEdge(E, set, 0, i);
+  else if (type === "complete") for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) addEdge(E, set, i, j);
+  else if (type === "grid") { const c = Math.ceil(Math.sqrt(n)); pos = Array.from({ length: n }, (_, i) => [(i % c) / (c - 1), Math.floor(i / c) / (c - 1)]); for (let i = 0; i < n; i++) { if ((i + 1) % c && i + 1 < n) addEdge(E, set, i, i + 1); if (i + c < n) addEdge(E, set, i, i + c); } }
+  else if (type === "tree") for (let i = 1; i < n; i++) addEdge(E, set, i, Math.floor(R() * i));
+  else if (type === "er") { const p = Math.min(1, 4 / (n - 1)); for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (R() < p) addEdge(E, set, i, j); }
+  else if (type === "ws") { for (let i = 0; i < n; i++) for (let k = 1; k <= 2; k++) { let j = (i + k) % n; if (R() < 0.2) { let t = 0; do { j = Math.floor(R() * n); t++; } while ((j === i || set.has(Math.min(i, j) + "," + Math.max(i, j))) && t < 50); } addEdge(E, set, i, j); } }
+  else if (type === "ba") { addEdge(E, set, 0, 1); addEdge(E, set, 1, 2); addEdge(E, set, 0, 2); const deg = [2, 2, 2];
+    for (let v = 3; v < n; v++) { deg.push(0); const tg = new Set(); while (tg.size < 2) { const tot = deg.slice(0, v).reduce((a, b) => a + b, 0); let r = R() * tot, u = 0; while (r >= deg[u]) { r -= deg[u]; u++; } tg.add(u); } tg.forEach(u => { addEdge(E, set, v, u); deg[v]++; deg[u]++; }); } }
+  else if (type === "geo") { pos = Array.from({ length: n }, () => [R(), R()]); const r = rad || Math.sqrt(2.6 / (Math.PI * n)) * 1.25; for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (Math.hypot(pos[i][0] - pos[j][0], pos[i][1] - pos[j][1]) < r) addEdge(E, set, i, j); }
+  connect(n, E, set, R, pos);
+  return { n, E, pos };
+}
+function forceLayout(n, E, R) {
+  const P = Array.from({ length: n }, () => [R() - 0.5, R() - 0.5]); const k = 1 / Math.sqrt(n);
+  let temp = 0.12;
+  for (let it = 0; it < 380; it++) {
+    const D = Array.from({ length: n }, () => [0, 0]);
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { let dx = P[i][0] - P[j][0], dy = P[i][1] - P[j][1]; const d = Math.max(1e-4, Math.hypot(dx, dy)); const f = k * k / d; dx /= d; dy /= d; D[i][0] += dx * f; D[i][1] += dy * f; D[j][0] -= dx * f; D[j][1] -= dy * f; }
+    for (const [a, b] of E) { let dx = P[a][0] - P[b][0], dy = P[a][1] - P[b][1]; const d = Math.max(1e-4, Math.hypot(dx, dy)); const f = d * d / k; dx /= d; dy /= d; D[a][0] -= dx * f; D[a][1] -= dy * f; D[b][0] += dx * f; D[b][1] += dy * f; }
+    for (let i = 0; i < n; i++) { const d = Math.hypot(D[i][0], D[i][1]) || 1; P[i][0] += D[i][0] / d * Math.min(d, temp); P[i][1] += D[i][1] / d * Math.min(d, temp); }
+    temp *= 0.985;
+  }
+  return normalizePos(P);
+}
+function normalizePos(P) {
+  const xs = P.map(p => p[0]), ys = P.map(p => p[1]); const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const s = Math.max(x1 - x0, y1 - y0) || 1; return P.map(p => [(p[0] - x0) / s + (1 - (x1 - x0) / s) / 2, (p[1] - y0) / s + (1 - (y1 - y0) / s) / 2]);
+}
+const circle = (n, off = -Math.PI / 2) => Array.from({ length: n }, (_, i) => [0.5 + 0.45 * Math.cos(off + 2 * Math.PI * i / n), 0.5 + 0.45 * Math.sin(off + 2 * Math.PI * i / n)]);
+
+/* ---------- scenario builders ---------- */
+const PRESETS = {
+  sh_geo: { type: "geo", n: 150, dim: 2, sigma: 0.3, ns: 4, place: "extremes", seed: 7, rad: 0.14 },
+  sh_grid: { type: "grid", n: 144, dim: 2, sigma: 0.3, ns: 4, place: "extremes", seed: 5, stub: () => [0, 11, 132, 143] },
+  sh_ws: { type: "ws", n: 100, dim: 1, sigma: 0.22, ns: 2, place: "extremes", seed: 2, stub: () => [0, 50] },
+  sh_path: { type: "path", n: 40, dim: 1, sigma: 0.4, ns: 2, place: "extremes", seed: 3, stub: n => [0, n - 1] }
+};
+const NOTES = {
+  ex71: ["Path s – i – j – k with a stubborn agent at 0 and x(0) = (0, 11/10, 1, 9/10), σ = 1. The edge s–i is never active, yet in the limit its length is exactly σ: the limit (0, 1, 1, 1) is critical, and the update map T would move agent i to 2/3. The limit is fixed by every affine piece used near it, not by T itself.", "Example 7.1, Theorem 5.1"],
+  ex73: ["A regular agent joined to three stubborn agents at distance σ = 1 in directions 120° apart. At the centre it is balanced: both the full pattern and the empty pattern fix it. Started slightly off-centre, it is pulled towards whichever stubborn agents it can see; no switching between those two patterns can persist.", "Example 7.3, Theorem 5.3, Proposition 5.9"],
+  ex74: ["Triangle with stubborn agents at −1 + 4^(−m) and 0 and a regular agent at 1, σ = 1. The regular agent halves its distance to 0 each step and first sees the far stubborn agent at t = 2m. Freezing is guaranteed (d = 1), but no bound on its time holds uniformly in the data.", "Example 7.4, Theorem 5.7"],
+  et: ["Etesami–Touri: complete graph on six agents, stubborn agents at 0 and 1, regular agents with two different bounds 1/4 and 59/100. In exact arithmetic the state returns to x(0) after ten steps: the trajectory never converges. Theorem 5.1 needs a common bound on the regular agents.", "Example 7.5; arXiv:2610.20783, Theorem 2"],
+  how: ["Hegarty–Ognissanti–Wedin: complete graph on seven agents, stubborn agents at 0 and 168, regular bounds 42, 48, 12, 48, 42. Opinions converge to (36, 72, 84, 96, 132), but the middle agent alternately listens to and ignores its neighbours, whose distances approach 12 from alternating sides: the listening arcs change at every step.", "Example 7.5; arXiv:2610.03229, Section 2"],
+  fj: ["When σ is at least the initial spread of opinions, every edge stays active and HK coincides step by step with Friedkin–Johnsen dynamics with susceptibility 1 on regular agents and 0 on stubborn ones. The limit is the harmonic extension of the stubborn opinions.", "Proposition 6.1"],
+  sh_geo: ["150 agents on a random geometric graph with opinions in the unit square and σ = 0.3; four stubborn agents hold the corners. Watch clusters form, drift towards the stubborn agents that can see them, and lose or gain neighbours as they move. The interaction graph changes 28 times in the first 42 steps and then freezes, while the clusters keep converging to their limits.", "Theorems 5.1 and 5.5"],
+  sh_grid: ["A 12 × 12 grid with stubborn agents at the four corner nodes, holding the four corners of the opinion square; σ = 0.3. Regions of the grid that can still see a stubborn agent are pulled to it (trapped components); regions that lose contact settle at their own average (free components).", "Theorems 5.1 and 5.5; Section 4"],
+  sh_ws: ["100 agents on a small-world graph with stubborn agents holding 0 and 1 and σ = 0.22. Opinions split into groups; groups linked to a stubborn agent are drawn to its opinion, and the listening arcs keep switching for hundreds of steps before freezing, as Theorem 5.7 guarantees in one dimension.", "Theorems 5.1 and 5.7"],
+  sh_path: ["A path of 40 agents with stubborn ends at 0 and 1 and σ = 0.4. Where the chain stays connected, opinions relax slowly towards the straight line between the two stubborn values (the harmonic extension); edges that break split the chain into pieces that settle separately.", "Theorems 5.1 and 5.7; Proposition 6.1"],
+  random: ["Choose a graph, dimension, bound and stubborn placement. With a common bound every trajectory converges (Theorem 5.1); in 1-D the interaction graph freezes after finitely many steps (Theorem 5.7); in 2-D it freezes for almost every stubborn profile (Theorem 5.5) and always when all stubborn agents share one opinion (Corollary 5.6).", "Theorems 5.1, 5.5, 5.7; Corollary 5.6"]
+};
+
+function buildScenario() {
+  const sc = el.scenario.value, R = rng(+el.seed.value || 1);
+  let g, S = new Set(), sig, x0, dim = 1, layout, exactOK = true;
+  const one = Q(1n);
+  if (sc === "ex71") {
+    g = { n: 4, E: [[0, 1], [1, 2], [2, 3]] }; S = new Set([0]); sig = [Q(0n), one, one, one];
+    x0 = [Q(0n), Q(11n, 10n), one, Q(9n, 10n)]; layout = [[0.08, 0.5], [0.36, 0.5], [0.64, 0.5], [0.92, 0.5]];
+  } else if (sc === "ex74") {
+    const m = +el.m.value; g = { n: 3, E: [[0, 1], [0, 2], [1, 2]] }; S = new Set([0, 1]); sig = [Q(0n), Q(0n), one];
+    x0 = [qAdd(Q(-1n), Q(1n, 4n ** big(m))), Q(0n), one]; layout = [[0.12, 0.78], [0.5, 0.78], [0.88, 0.78]];
+  } else if (sc === "et") {
+    g = makeGraph("complete", 6, R); S = new Set([0, 5]); const z = Q(34576n, 248589n);
+    sig = [Q(0n), Q(1n, 4n), Q(59n, 100n), Q(59n, 100n), Q(1n, 4n), Q(0n)];
+    x0 = [Q(0n), z, Q(2n, 5n), Q(3n, 5n), qSub(one, z), one]; layout = circle(6, Math.PI);
+  } else if (sc === "how") {
+    g = makeGraph("complete", 7, R); S = new Set([0, 6]);
+    sig = [0, 42, 48, 12, 48, 42, 0].map(v => Q(big(v))); x0 = [0, 38, 69, 84, 99, 130, 168].map(v => Q(big(v))); layout = circle(7, Math.PI);
+  } else if (sc === "ex73") {
+    dim = 2; exactOK = false; g = { n: 4, E: [[0, 3], [1, 3], [2, 3]] }; S = new Set([0, 1, 2]);
+    sig = [0, 0, 0, 1]; x0 = [0, 1, 2].map(k => [Math.cos(Math.PI / 2 + 2 * Math.PI * k / 3), Math.sin(Math.PI / 2 + 2 * Math.PI * k / 3)]);
+    x0.push([0.04, -0.015]); layout = [[0.5, 0.1], [0.15, 0.72], [0.85, 0.72], [0.5, 0.5]];
+  } else {
+    const P = PRESETS[sc] || { type: sc === "fj" ? "ws" : el.gtype.value, n: sc === "fj" ? 20 : +el.n.value, dim: sc === "fj" ? 1 : state.dimUI, sigma: sc === "fj" ? 1.0 : +el.sigma.value, ns: +el.ns.value, place: el.place.value };
+    const PR = PRESETS[sc] ? rng(PRESETS[sc].seed) : R;
+    const n = P.n; dim = P.dim; const type = P.type;
+    g = makeGraph(type, n, PR, P.rad); layout = g.pos ? normalizePos(g.pos.map(p => [p[0], 1 - p[1]])) : forceLayout(n, g.E, PR);
+    const ns = Math.min(P.ns, n - 1); const order = Array.from({ length: n }, (_, i) => i).sort(() => PR() - 0.5);
+    if (P.stub) P.stub(n).forEach(i => S.add(i)); else for (let i = 0; i < ns; i++) S.add(order[i]);
+    const sv = P.sigma; const place = P.place;
+    const sArr = [...S];
+    if (dim === 1) {
+      x0 = Array.from({ length: n }, () => PR());
+      sArr.forEach((s, k) => { x0[s] = place === "common" ? 0.5 : place === "extremes" ? (k % 2 ? 1 : 0) : PR(); });
+    } else {
+      exactOK = false; x0 = Array.from({ length: n }, () => [PR(), PR()]);
+      const corners = [[0, 0], [1, 1], [1, 0], [0, 1]];
+      sArr.forEach((s, k) => { x0[s] = place === "common" ? [0.5, 0.5] : place === "extremes" ? corners[k % 4].slice() : [PR(), PR()]; });
+    }
+    sig = Array.from({ length: n }, (_, i) => S.has(i) ? 0 : sv);
+    if (dim === 1) { x0 = x0.map(v => qFrom(v, 48)); sig = sig.map(v => qFrom(v, 100)); }
+  }
+  const exact = dim === 1 && exactOK && el.arith.value === "exact" && g.n <= 12;
+  if (dim === 1 && !exact) { x0 = x0.map(v => typeof v === "object" ? qNum(v) : v); sig = sig.map(v => typeof v === "object" ? qNum(v) : v); }
+  const n = g.n, adj = Array.from({ length: n }, () => []); g.E.forEach(([a, b]) => { adj[a].push(b); adj[b].push(a); });
+  const Ep = g.E.filter(([a, b]) => !(S.has(a) && S.has(b)));
+  const arcs = []; for (let i = 0; i < n; i++) if (!S.has(i)) for (const j of adj[i]) arcs.push([i, j]);
+  const sigNum = sig.map(v => typeof v === "object" ? qNum(v) : v);
+  const regular = sigNum.filter((v, i) => !S.has(i));
+  const common = regular.every(v => v === regular[0]);
+  return { sc, n, E: g.E, Ep, adj, arcs, S, sig, sigNum, dim, exact, layout, common, x0 };
+}
+
+/* ---------- dynamics ---------- */
+const le = () => el.conv.value === "le";
+function dist(sim, a, b) { // returns exact Q (1-D exact) or number
+  if (sim.exact) return qAbs(qSub(a, b));
+  if (sim.dim === 1) return Math.abs(a - b);
+  return Math.hypot(a[0] - b[0], a[1] - b[1]);
+}
+function within(sim, d, s) {
+  if (sim.exact) { const c = qCmp(d, s); return le() ? c <= 0 : c < 0; }
+  return le() ? d <= s + 1e-12 * Math.max(1, s) : d < s - 1e-12 * Math.max(1, s);
+}
+function isCritical(sim, d, s) { if (sim.exact) return qCmp(d, s) === 0; return Math.abs(d - s) <= 1e-9 * Math.max(1, s); }
+function listens(sim, x, i, j) { return !sim.S.has(i) && within(sim, dist(sim, x[i], x[j]), sim.sig[i]); }
+function stepState(sim, x) {
+  const y = x.slice();
+  for (let i = 0; i < sim.n; i++) {
+    if (sim.S.has(i)) continue;
+    const nb = [i]; for (const j of sim.adj[i]) if (listens(sim, x, i, j)) nb.push(j);
+    if (sim.exact) { let s = Q(0n); nb.forEach(j => { s = qAdd(s, x[j]); }); y[i] = qDivInt(s, nb.length); }
+    else if (sim.dim === 1) { let s = 0; nb.forEach(j => { s += x[j]; }); y[i] = s / nb.length; }
+    else { let s0 = 0, s1 = 0; nb.forEach(j => { s0 += x[j][0]; s1 += x[j][1]; }); y[i] = [s0 / nb.length, s1 / nb.length]; }
+  }
+  return y;
+}
+const toNum = (sim, x) => sim.exact ? x.map(qNum) : x.map(v => Array.isArray(v) ? v.slice() : v);
+function patternOf(sim, x) { let s = ""; for (const [i, j] of sim.arcs) s += listens(sim, x, i, j) ? "1" : "0"; return s; }
+function energy(sim, xn) {
+  const s = Math.max(...sim.sigNum); let V = 0;
+  for (const [a, b] of sim.Ep) { const d = sim.dim === 1 ? xn[a] - xn[b] : Math.hypot(xn[a][0] - xn[b][0], xn[a][1] - xn[b][1]); V += Math.min(d * d, s * s); }
+  return V;
+}
+function stateKey(x) { return x.map(q => q.n + "/" + q.d).join(","); }
+
+/* ---------- state ---------- */
+const el = {}; ["scenario", "m", "mVal", "paramM", "netControls", "gtype", "n", "nVal", "d1", "d2", "sigma", "sigmaVal", "ns", "nsVal", "place", "seed", "reseed", "conv", "arith", "horizon", "horizonVal", "chips", "net", "caption", "play", "step", "restart", "time", "timeVal", "speed", "speedVal", "inspect", "traj", "plane", "disks", "opCaption", "cV", "cS", "cA", "dgCaption", "notes", "vOp", "vGr", "vBo", "flash", "net2", "net2box", "tab-op", "tab-dg", "tab-nt", "p-op", "p-dg", "p-nt"].forEach(id => el[id] = document.getElementById(id));
+const state = { dimUI: 1, sim: null, hist: [], histN: [], pats: [], V: [], dx: [], nAct: [], switches: [], tCur: 0, phase: 0, tEnd: 0, view: "both", r1: null, bb: null, playing: false, period: null, floatAt: null, sel: null, keys: null };
+
+function rebuild() {
+  const sim = buildScenario();
+  Object.assign(state, { sim, hist: [sim.x0], histN: [toNum(sim, sim.x0)], pats: [patternOf(sim, sim.x0)], V: [], dx: [], nAct: [], switches: [], period: null, floatAt: null, keys: sim.exact ? new Map([[stateKey(sim.x0), 0]]) : null });
+  state.V.push(energy(sim, state.histN[0])); state.nAct.push((state.pats[0].match(/1/g) || []).length);
+  state.r1 = null; state.bb = null;
+  extendTo(+el.horizon.value);
+  state.tCur = 0; state.phase = 0; state.tEnd = activityEnd();
+  if (state.sel !== null && state.sel >= sim.n) state.sel = null;
+  syncControls(); renderAll();
+}
+function extendTo(T) {
+  const sim = state.sim;
+  while (state.hist.length - 1 < T) {
+    const x = state.hist[state.hist.length - 1];
+    let y = stepState(sim, x);
+    if (sim.exact && y.some(q => qDigits(q) > 400)) {           // keep exact arithmetic affordable
+      sim.exact = false; state.floatAt = state.hist.length;
+      state.hist = state.hist.map(z => z.map(qNum)); sim.sig = sim.sig.map(qNum); y = stepState(sim, state.hist[state.hist.length - 1]); state.keys = null;
+    }
+    const yn = toNum(sim, y), xn = state.histN[state.histN.length - 1];
+    let mx = 0; for (let i = 0; i < sim.n; i++) { const d = sim.dim === 1 ? Math.abs(yn[i] - xn[i]) : Math.hypot(yn[i][0] - xn[i][0], yn[i][1] - xn[i][1]); if (d > mx) mx = d; }
+    state.hist.push(y); state.histN.push(yn); state.dx.push(mx); state.V.push(energy(sim, yn));
+    const p = patternOf(sim, y); if (p !== state.pats[state.pats.length - 1]) state.switches.push(state.pats.length);
+    state.pats.push(p); state.nAct.push((p.match(/1/g) || []).length);
+    if (state.keys && state.period === null) { const k = stateKey(y); if (state.keys.has(k)) { const t0 = state.keys.get(k); if (state.hist.length - 1 - t0 > 0) state.period = { from: t0, len: state.hist.length - 1 - t0 }; } else if (k.length < 20000) state.keys.set(k, state.hist.length - 1); }
+  }
+}
+
+function activityEnd() {
+  const T = state.hist.length - 1; if (state.period) return T;
+  const [lo, hi] = state.sim.dim === 1 ? range1(state.sim) : [0, state.bb ? state.bb[0][1] - state.bb[0][0] : 1];
+  const tol = 2e-4 * (hi - lo || 1); let a = 0; state.dx.forEach((v, t) => { if (v > tol) a = t + 1; });
+  const sw = state.switches.length ? state.switches[state.switches.length - 1] : 0;
+  return Math.min(T, Math.max(12, Math.ceil(Math.max(a, sw) * 1.08) + 6));
+}
+
+/* ---------- colours ---------- */
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const RAMP = [[44, 76, 126], [42, 130, 140], [120, 168, 112], [222, 190, 98], [196, 92, 52]];
+function ramp(t) { t = Math.max(0, Math.min(1, t)) * (RAMP.length - 1); const i = Math.min(RAMP.length - 2, Math.floor(t)), f = t - i; const a = RAMP[i], b = RAMP[i + 1]; return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(",")})`; }
+function range1(sim) { if (state.r1) return state.r1; state.r1 = range1_(sim); return state.r1; }
+function range1_(sim) { const all = state.histN[0]; let lo = Math.min(...all), hi = Math.max(...all); if (hi - lo < 1e-9) { lo -= 0.5; hi += 0.5; } return [lo, hi]; }
+function colorOf(sim, v) {
+  if (sim.dim === 1) { const [lo, hi] = range1(sim); return ramp((v - lo) / (hi - lo)); }
+  const [bx, by] = bbox2(); const u = (v[0] - bx[0]) / (bx[1] - bx[0] || 1), w = (v[1] - by[0]) / (by[1] - by[0] || 1);
+  const h = (Math.atan2(w - 0.5, u - 0.5) * 180 / Math.PI + 360) % 360; const r = Math.min(1, Math.hypot(u - 0.5, w - 0.5) * 2);
+  return `hsl(${h.toFixed(0)}, ${(35 + 45 * r).toFixed(0)}%, ${(52 - 6 * r).toFixed(0)}%)`;
+}
+function bbox2() { if (!state.bb) state.bb = bbox2_(); return state.bb; }
+function bbox2_() { const P = state.histN[0]; const xs = P.map(p => p[0]), ys = P.map(p => p[1]); const pad = 0.08; const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys); const s = Math.max(x1 - x0, y1 - y0) || 1; const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; return [[cx - s / 2 - pad * s, cx + s / 2 + pad * s], [cy - s / 2 - pad * s, cy + s / 2 + pad * s]]; }
+
+/* ---------- canvas helpers ---------- */
+function prep(cv) { const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight; if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); } const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h); return [c, w, h]; }
+function axes(c, w, h, m, xr, yr, xlabel, yfmt) {
+  c.strokeStyle = css("--rule"); c.fillStyle = css("--muted"); c.lineWidth = 1; c.font = "11px " + css("--mono");
+  const ticks = (lo, hi, k) => { const step = niceStep((hi - lo) / k); const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-12; v += step) out.push(+v.toPrecision(10)); return out; };
+  ticks(yr[0], yr[1], 4).forEach(v => { const y = m.t + (1 - (v - yr[0]) / (yr[1] - yr[0])) * (h - m.t - m.b); c.globalAlpha = 0.6; c.beginPath(); c.moveTo(m.l, y); c.lineTo(w - m.r, y); c.stroke(); c.globalAlpha = 1; c.textAlign = "right"; c.textBaseline = "middle"; c.fillText(yfmt ? yfmt(v) : fmt(v), m.l - 5, y); });
+  ticks(xr[0], xr[1], 5).forEach(v => { const x = m.l + (v - xr[0]) / (xr[1] - xr[0]) * (w - m.l - m.r); c.textAlign = "center"; c.textBaseline = "top"; c.fillText(fmt(v), x, h - m.b + 4); });
+  if (xlabel) { c.textAlign = "right"; c.fillText(xlabel, w - m.r, h - m.b + 4 + 12); }
+}
+function niceStep(x) { const p = Math.pow(10, Math.floor(Math.log10(x || 1))); const f = x / p; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p; }
+function fmt(v) { const a = Math.abs(v); return a >= 1000 || (a > 0 && a < 0.001) ? v.toExponential(0) : +v.toPrecision(3) + ""; }
+
+/* ---------- network view ---------- */
+
+const ease = f => f < 0.5 ? 2 * f * f : 1 - 2 * (1 - f) * (1 - f);
+function interpN() { // numeric positions between tCur and tCur + 1
+  const a = state.histN[state.tCur], b = state.histN[Math.min(state.tCur + 1, state.histN.length - 1)], f = ease(state.phase);
+  if (f === 0 || a === b) return a;
+  return a.map((v, i) => Array.isArray(v) ? [v[0] + (b[i][0] - v[0]) * f, v[1] + (b[i][1] - v[1]) * f] : v + (b[i] - v) * f);
+}
+function drawNets() {
+  const both = state.view === "both";
+  drawNet(el.net, both ? "op" : state.view);
+  if (both) drawNet(el.net2, "gr");
+}
+function drawNet(cv, view) {
+  const [c, w, h] = prep(cv); const sim = state.sim, t = state.tCur, x = state.hist[t], xn = interpN();
+  const xprev = t > 0 ? state.hist[t - 1] : null, ink = css("--ink"), acc = css("--accent");
+  const pad = 30; let P;
+  if (view === "gr") { const sz = Math.min(w, h) - 2 * pad, ox = (w - sz) / 2, oy = (h - sz) / 2; P = sim.layout.map(p => [ox + p[0] * sz, oy + p[1] * sz]); }
+  else if (sim.dim === 2) { const [bx, by] = bbox2(); const sz = Math.min(w, h) - 2 * pad, ox = (w - sz) / 2, oy = (h - sz) / 2; P = xn.map(v => [ox + (v[0] - bx[0]) / (bx[1] - bx[0]) * sz, oy + (1 - (v[1] - by[0]) / (by[1] - by[0])) * sz]); }
+  else { const [lo, hi] = range1(sim), m = (hi - lo) * 0.04; P = xn.map((v, i) => [pad + (v - lo + m) / (hi - lo + 2 * m) * (w - 2 * pad), pad + sim.layout[i][1] * (h - 2 * pad - 14)]);
+    c.strokeStyle = css("--rule"); c.fillStyle = css("--muted"); c.font = "11px " + css("--mono"); c.textAlign = "center"; c.textBaseline = "bottom";
+    const st = niceStep((hi - lo) / 6); for (let v = Math.ceil(lo / st) * st; v <= hi + 1e-12; v += st) { const px = pad + (v - lo + m) / (hi - lo + 2 * m) * (w - 2 * pad); c.globalAlpha = 0.5; c.beginPath(); c.moveTo(px, 8); c.lineTo(px, h - 18); c.stroke(); c.globalAlpha = 1; c.fillText(fmt(+v.toPrecision(10)), px, h - 3); }
+    // σ ruler
+    const sp = (Math.max(...sim.sigNum) / (hi - lo + 2 * m)) * (w - 2 * pad); if (sp > 4 && sp < w - 2 * pad) { c.strokeStyle = acc; c.lineWidth = 2; c.beginPath(); c.moveTo(w - pad - sp, 12); c.lineTo(w - pad, 12); c.stroke(); c.fillStyle = acc; c.textAlign = "right"; c.textBaseline = "top"; c.fillText("σ", w - pad - sp - 4, 6); }
+  }
+  if (view !== "gr" && sim.dim === 2) { // σ ruler in the plane
+    const [bx] = bbox2(), sz = Math.min(w, h) - 2 * pad, sp = Math.max(...sim.sigNum) / (bx[1] - bx[0]) * sz, ox = (w - sz) / 2;
+    c.strokeStyle = css("--rule"); c.strokeRect(ox, (h - sz) / 2, sz, sz);
+    c.strokeStyle = acc; c.lineWidth = 2; c.beginPath(); c.moveTo(ox + sz - sp, (h - sz) / 2 - 8); c.lineTo(ox + sz, (h - sz) / 2 - 8); c.stroke();
+    c.fillStyle = acc; c.font = "11px " + css("--mono"); c.textAlign = "right"; c.textBaseline = "middle"; c.fillText("σ", ox + sz - sp - 4, (h - sz) / 2 - 8);
+  }
+  if (view !== "gr" && sim.dim === 2 && el.disks.checked) { const [bx] = bbox2(), sz = Math.min(w, h) - 2 * pad; for (let i = 0; i < sim.n; i++) if (!sim.S.has(i)) { c.beginPath(); c.arc(P[i][0], P[i][1], sim.sigNum[i] / (bx[1] - bx[0]) * sz, 0, 2 * Math.PI); c.strokeStyle = colorOf(sim, state.histN[0][i]); c.globalAlpha = sim.n > 60 ? 0.12 : 0.3; c.lineWidth = 1; c.stroke(); c.globalAlpha = 1; } }
+  cv._P = P;
+  const comp = trapInfo(sim, x), many = sim.n > 60, opv = view !== "gr";
+  if (opv) { drawGrouped(c, sim, x, xprev, P, comp); return; }
+  const flashOn = el.flash.checked && xprev, fl = 1 - state.phase;
+  for (const [a, b] of sim.E) {
+    const la = listens(sim, x, a, b), lb = listens(sim, x, b, a); const d = dist(sim, x[a], x[b]);
+    const crit = (!sim.S.has(a) && isCritical(sim, d, sim.sig[a])) || (!sim.S.has(b) && isCritical(sim, d, sim.sig[b]));
+    const sw = flashOn && (la !== listens(sim, xprev, a, b) || lb !== listens(sim, xprev, b, a));
+    const active = la || lb;
+    if (!active && !crit && !sw && (opv || many) && sim.n > 20) { if (!opv) { c.strokeStyle = ink; c.globalAlpha = 0.08; c.lineWidth = 0.7; c.beginPath(); c.moveTo(P[a][0], P[a][1]); c.lineTo(P[b][0], P[b][1]); c.stroke(); c.globalAlpha = 1; } continue; }
+    c.beginPath(); c.moveTo(P[a][0], P[a][1]); c.lineTo(P[b][0], P[b][1]);
+    if (sw) { c.strokeStyle = acc; c.globalAlpha = 0.35 + 0.6 * fl; c.setLineDash(active ? [] : [3, 3]); c.lineWidth = 2 + 3 * fl; }
+    else if (sim.S.has(a) && sim.S.has(b)) { c.strokeStyle = ink; c.globalAlpha = 0.15; c.setLineDash([1, 4]); c.lineWidth = 1; }
+    else if (crit) { c.strokeStyle = acc; c.globalAlpha = 1; c.setLineDash([6, 3]); c.lineWidth = 2; }
+    else if (active) { const both = (la || sim.S.has(a)) && (lb || sim.S.has(b)); c.strokeStyle = ink; c.globalAlpha = many ? 0.45 : 0.8; c.setLineDash(both ? [] : [5, 3]); c.lineWidth = many ? 1 : (both ? 1.8 : 1.5); }
+    else { c.strokeStyle = ink; c.globalAlpha = 0.3; c.setLineDash([1, 4]); c.lineWidth = 1; }
+    c.stroke(); c.setLineDash([]); c.globalAlpha = 1;
+  }
+  const r = Math.max(3.5, Math.min(14, 120 / Math.sqrt(sim.n)));
+  const nxt = state.histN[Math.min(t + 1, state.histN.length - 1)], cur = state.histN[t];
+  const scale = sim.dim === 1 ? (range1(sim)[1] - range1(sim)[0]) : (bbox2()[0][1] - bbox2()[0][0]);
+  const col0 = view === "gr" ? xn : state.histN[0];
+  for (let i = 0; i < sim.n; i++) {
+    const [px, py] = P[i]; const fillc = colorOf(sim, view === "gr" ? xn[i] : col0[i]);
+    if (!sim.S.has(i)) { // motion halo: size of the step being taken
+      const mv = sim.dim === 1 ? Math.abs(nxt[i] - cur[i]) : Math.hypot(nxt[i][0] - cur[i][0], nxt[i][1] - cur[i][1]);
+      const q = Math.min(1, Math.sqrt(mv / (0.03 * scale)));
+      if (q > 0.05) { c.beginPath(); c.arc(px, py, r + 2 + 7 * q, 0, 2 * Math.PI); c.fillStyle = fillc; c.globalAlpha = 0.22; c.fill(); c.globalAlpha = 1; }
+    }
+    if (state.sel === i) { c.beginPath(); c.arc(px, py, r + 7, 0, 2 * Math.PI); c.strokeStyle = acc; c.lineWidth = 2; c.stroke(); }
+    c.fillStyle = fillc;
+    if (sim.S.has(i)) { const R2 = r + 2; c.fillRect(px - R2, py - R2, 2 * R2, 2 * R2); c.strokeStyle = ink; c.lineWidth = 2.5; c.strokeRect(px - R2, py - R2, 2 * R2, 2 * R2); }
+    else { c.beginPath(); c.arc(px, py, r, 0, 2 * Math.PI); c.fill(); c.strokeStyle = ink; c.lineWidth = many ? 1 : 1.6; c.setLineDash(comp.trapped[i] ? [] : [2, 2]); c.stroke(); c.setLineDash([]); }
+    if (sim.n <= 16) { c.fillStyle = ink; c.font = "11px " + css("--mono"); c.textAlign = "center"; c.textBaseline = "top"; const v = state.histN[t][i]; c.fillText(sim.dim === 1 ? fmt(v) : `(${fmt(v[0])}, ${fmt(v[1])})`, px, py + r + 4); }
+  }
+}
+/* opinion view: agents at the same point (within 1 px) are drawn as one node */
+function drawGrouped(c, sim, x, xprev, P, comp) {
+  const n = sim.n, ink = css("--ink"), acc = css("--accent"), t = state.tCur;
+  const par = Array.from({ length: n }, (_, i) => i); const f = a => par[a] === a ? a : (par[a] = f(par[a]));
+  const cell = new Map(), key = (i, j) => i + "," + j;
+  for (let i = 0; i < n; i++) { const gx = Math.floor(P[i][0]), gy = Math.floor(P[i][1]);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) { const L = cell.get(key(gx + dx, gy + dy)); if (L) for (const j of L) if (Math.hypot(P[i][0] - P[j][0], P[i][1] - P[j][1]) <= 1) par[f(i)] = f(j); }
+    const k = key(gx, gy); if (!cell.has(k)) cell.set(k, []); cell.get(k).push(i); }
+  const groups = new Map(); for (let i = 0; i < n; i++) { const r = f(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(i); }
+  const G = [...groups.values()].map(m => ({ m, x: m.reduce((s, i) => s + P[i][0], 0) / m.length, y: m.reduce((s, i) => s + P[i][1], 0) / m.length, stub: m.some(i => sim.S.has(i)) }));
+  const gid = new Array(n); G.forEach((g, k) => g.m.forEach(i => { gid[i] = k; }));
+  // edges between groups: aggregate the state of the underlying graph edges
+  const many = G.length > 60, flashOn = el.flash.checked && xprev, fl = 1 - state.phase, E2 = new Map();
+  for (const [a, b] of sim.E) {
+    const ga = gid[a], gb = gid[b]; if (ga === gb) continue;
+    const k = ga < gb ? ga + "," + gb : gb + "," + ga; let e = E2.get(k); if (!e) { e = { a: ga, b: gb, act: false, both: false, crit: false, sw: false, ss: true }; E2.set(k, e); }
+    const la = listens(sim, x, a, b), lb = listens(sim, x, b, a), d = dist(sim, x[a], x[b]);
+    if (la || lb) { e.act = true; if ((la || sim.S.has(a)) && (lb || sim.S.has(b))) e.both = true; }
+    if ((!sim.S.has(a) && isCritical(sim, d, sim.sig[a])) || (!sim.S.has(b) && isCritical(sim, d, sim.sig[b]))) e.crit = true;
+    if (flashOn && (la !== listens(sim, xprev, a, b) || lb !== listens(sim, xprev, b, a))) e.sw = true;
+    if (!(sim.S.has(a) && sim.S.has(b))) e.ss = false;
+  }
+  for (const e of E2.values()) {
+    if (!e.act && !e.crit && !e.sw && (n > 20 || e.ss)) continue;
+    const A = G[e.a], B = G[e.b]; c.beginPath(); c.moveTo(A.x, A.y); c.lineTo(B.x, B.y);
+    if (e.sw) { c.strokeStyle = acc; c.globalAlpha = 0.35 + 0.6 * fl; c.setLineDash(e.act ? [] : [3, 3]); c.lineWidth = 2 + 3 * fl; }
+    else if (e.crit) { c.strokeStyle = acc; c.globalAlpha = 1; c.setLineDash([6, 3]); c.lineWidth = 2; }
+    else if (e.act) { c.strokeStyle = ink; c.globalAlpha = many ? 0.45 : 0.8; c.setLineDash(e.both ? [] : [5, 3]); c.lineWidth = many ? 1 : 1.6; }
+    else { c.strokeStyle = ink; c.globalAlpha = 0.3; c.setLineDash([1, 4]); c.lineWidth = 1; }
+    c.stroke(); c.setLineDash([]); c.globalAlpha = 1;
+  }
+  // nodes: area proportional to the number of agents
+  const r0 = Math.max(3.5, Math.min(12, 110 / Math.sqrt(n)));
+  const nxt = state.histN[Math.min(t + 1, state.histN.length - 1)], cur = state.histN[t];
+  const scale = sim.dim === 1 ? (range1(sim)[1] - range1(sim)[0]) : (bbox2()[0][1] - bbox2()[0][0]);
+  const xn = interpN();
+  G.sort((A, B) => B.m.length - A.m.length);
+  for (const g of G) {
+    const k = g.m.length, r = Math.min(r0 * Math.sqrt(k), 46), i0 = g.m[0], fillc = colorOf(sim, xn[i0]);
+    let mv = 0; for (const i of g.m) if (!sim.S.has(i)) mv = Math.max(mv, sim.dim === 1 ? Math.abs(nxt[i] - cur[i]) : Math.hypot(nxt[i][0] - cur[i][0], nxt[i][1] - cur[i][1]));
+    const q = Math.min(1, Math.sqrt(mv / (0.03 * scale)));
+    if (q > 0.05) { c.beginPath(); c.arc(g.x, g.y, r + 2 + 7 * q, 0, 2 * Math.PI); c.fillStyle = fillc; c.globalAlpha = 0.22; c.fill(); c.globalAlpha = 1; }
+    if (state.sel !== null && g.m.includes(state.sel)) { c.beginPath(); c.arc(g.x, g.y, r + 7, 0, 2 * Math.PI); c.strokeStyle = acc; c.lineWidth = 2; c.stroke(); }
+    c.fillStyle = fillc;
+    if (g.stub) { const R2 = Math.max(r, r0 + 2); c.fillRect(g.x - R2, g.y - R2, 2 * R2, 2 * R2); c.strokeStyle = ink; c.lineWidth = 2.5; c.strokeRect(g.x - R2, g.y - R2, 2 * R2, 2 * R2); }
+    else { const trapped = g.m.every(i => comp.trapped[i]); c.beginPath(); c.arc(g.x, g.y, r, 0, 2 * Math.PI); c.fill(); c.strokeStyle = ink; c.lineWidth = 1.4; c.setLineDash(trapped ? [] : [2, 2]); c.stroke(); c.setLineDash([]); }
+    if (k > 1) { const fs = Math.max(10, Math.min(16, r * 0.8)); c.font = `600 ${fs}px ` + css("--mono"); c.textAlign = "center"; c.textBaseline = "middle"; c.lineWidth = 3; c.strokeStyle = css("--paper"); c.strokeText(String(k), g.x, g.y); c.fillStyle = ink; c.fillText(String(k), g.x, g.y); }
+    else if (n <= 16) { const v = state.histN[t][i0]; c.fillStyle = ink; c.font = "11px " + css("--mono"); c.textAlign = "center"; c.textBaseline = "top"; c.fillText(sim.dim === 1 ? fmt(v) : `(${fmt(v[0])}, ${fmt(v[1])})`, g.x, g.y + r + 4); }
+  }
+}
+function trapInfo(sim, x) {
+  const n = sim.n, par = Array.from({ length: n }, (_, i) => i); const f = (a) => par[a] === a ? a : (par[a] = f(par[a]));
+  for (const [i, j] of sim.arcs) if (!sim.S.has(j) && listens(sim, x, i, j)) par[f(i)] = f(j);
+  const tr = new Set(); for (const [i, j] of sim.arcs) if (sim.S.has(j) && listens(sim, x, i, j)) tr.add(f(i));
+  const trapped = Array.from({ length: n }, (_, i) => !sim.S.has(i) && tr.has(f(i)));
+  const roots = new Set(); for (let i = 0; i < n; i++) if (!sim.S.has(i)) roots.add(f(i));
+  return { trapped, nTrapped: [...roots].filter(r => tr.has(r)).length, nFree: [...roots].filter(r => !tr.has(r)).length };
+}
+
+/* ---------- opinion panels ---------- */
+function drawTraj() {
+  const sim = state.sim; const [c, w, h] = prep(el.traj); const T = Math.max(1, state.tEnd), tc = state.tCur + ease(state.phase);
+  const panels = sim.dim === 1 ? [[0, h]] : [[0, h / 2], [h / 2, h]];
+  panels.forEach(([top, bot], k) => {
+    const m = { l: 46, r: 12, t: top + 10, b: h - bot + (sim.dim === 2 && k === 0 ? 8 : 30) };
+    const get = (t, i) => sim.dim === 1 ? state.histN[t][i] : state.histN[t][i][k];
+    let lo, hi; if (sim.dim === 1) [lo, hi] = range1(sim); else { const b = bbox2()[k]; lo = b[0]; hi = b[1]; }
+    const pad = (hi - lo) * 0.05, H = h;
+    const X = t => m.l + t / T * (w - m.l - m.r), Y = v => m.t + (1 - (v - lo + pad) / (hi - lo + 2 * pad)) * (H - m.t - m.b);
+    c.save(); c.translate(0, 0); axes(c, w, H, m, [0, T], [lo - pad, hi + pad], k === panels.length - 1 ? "t" : null); c.restore();
+    if (sim.dim === 2) { c.fillStyle = css("--muted"); c.font = "11px " + css("--mono"); c.textAlign = "left"; c.textBaseline = "top"; c.fillText(k ? "second coordinate" : "first coordinate", m.l + 6, m.t); }
+    const t1 = Math.min(Math.floor(tc), state.histN.length - 1), f = tc - t1;
+    for (let i = 0; i < sim.n; i++) {
+      c.beginPath(); for (let t = 0; t <= t1; t++) { const v = get(t, i); t ? c.lineTo(X(t), Y(v)) : c.moveTo(X(t), Y(v)); }
+      if (f > 0 && t1 + 1 < state.histN.length) { const v0 = get(t1, i), v1 = get(t1 + 1, i); c.lineTo(X(tc), Y(v0 + (v1 - v0) * f)); }
+      if (sim.S.has(i)) { c.strokeStyle = css("--ink"); c.lineWidth = 2.6; c.globalAlpha = 1; }
+      else { c.strokeStyle = colorOf(sim, state.histN[0][i]); c.lineWidth = state.sel === i ? 2.6 : (sim.n > 60 ? 0.9 : 1.3); c.globalAlpha = state.sel === null || state.sel === i ? 0.85 : 0.25; }
+      c.stroke(); c.globalAlpha = 1;
+    }
+    c.strokeStyle = css("--accent"); c.lineWidth = 1; c.beginPath(); c.moveTo(X(tc), m.t); c.lineTo(X(tc), H - m.b); c.stroke();
+  });
+  el.opCaption.textContent = (sim.dim === 1 ? "Opinion of every agent against time" : "Each coordinate of every agent's opinion against time") + ", drawn up to the current step; thick black lines are stubborn agents. The time axis ends shortly after the last observed motion or pattern change.";
+}
+function drawSeries(cv, data, opts) {
+  const [c, w, h] = prep(cv); const m = { l: 46, r: 12, t: 8, b: 20 }; const T = Math.max(1, state.tEnd);
+  const win = data.slice(0, T + 1);
+  const vals = win.filter(v => Number.isFinite(v)); let lo = Math.min(...vals), hi = Math.max(...vals); if (!vals.length) { lo = 0; hi = 1; } if (hi - lo < 1e-12) { lo -= 0.5; hi += 0.5; }
+  const X = t => m.l + t / T * (w - m.l - m.r), Y = v => m.t + (1 - (v - lo) / (hi - lo)) * (h - m.t - m.b);
+  axes(c, w, h, m, [0, T], [lo, hi], null, opts.yfmt);
+  const lim = state.tCur;
+  c.beginPath(); let started = false; win.forEach((v, t) => { const tt = t + (opts.offset || 0); if (tt > lim) return; if (!Number.isFinite(v)) { started = false; return; } const x = X(tt), y = Y(v); started ? c.lineTo(x, y) : c.moveTo(x, y); started = true; });
+  c.strokeStyle = css("--ink"); c.lineWidth = 1.5; c.stroke();
+  c.beginPath(); started = false; win.forEach((v, t) => { const tt = t + (opts.offset || 0); if (tt < lim) return; if (!Number.isFinite(v)) { started = false; return; } const x = X(tt), y = Y(v); started ? c.lineTo(x, y) : c.moveTo(x, y); started = true; });
+  c.strokeStyle = css("--ink"); c.globalAlpha = 0.18; c.stroke(); c.globalAlpha = 1;
+  if (opts.ticks) { c.strokeStyle = css("--accent"); c.lineWidth = 1; opts.ticks.forEach(t => { if (t > T) return; c.globalAlpha = t <= lim ? 1 : 0.3; c.beginPath(); c.moveTo(X(t), h - m.b); c.lineTo(X(t), h - m.b - 7); c.stroke(); }); c.globalAlpha = 1; }
+  c.strokeStyle = css("--accent"); c.globalAlpha = 0.6; c.beginPath(); c.moveTo(X(state.tCur), m.t); c.lineTo(X(state.tCur), h - m.b); c.stroke(); c.globalAlpha = 1;
+}
+function drawDiag() {
+  drawSeries(el.cV, state.V, {});
+  drawSeries(el.cS, state.dx.map(v => v > 0 ? Math.log10(v) : NaN), { offset: 0, yfmt: v => v.toFixed(0) });
+  drawSeries(el.cA, state.nAct, { ticks: state.switches });
+  const sim = state.sim;
+  el.dgCaption.textContent = sim.common
+    ? "With a common bound on the regular agents the energy never increases (Lemma 3.1); the largest step tends to zero."
+    : "The regular agents use different bounds here, so the energy is not a Lyapunov function and may increase.";
+}
+
+/* ---------- status ---------- */
+function chips() {
+  const sim = state.sim, T = state.hist.length - 1, sw = state.switches, last = sw.length ? sw[sw.length - 1] : 0;
+  const out = [`<span class="chip">t = <b>${state.tCur}</b></span>`, `<span class="chip">${sim.n} agents, ${sim.S.size} stubborn, d = ${sim.dim}</span>`,
+    `<span class="chip ${sw.includes(state.tCur) ? "crit" : ""}">pattern changes so far: <b>${sw.filter(t => t <= state.tCur).length}</b> of ${sw.length}${sw.length ? ` (last at t = ${last})` : ""}</span>`];
+  out.push(`<span class="chip">${sim.exact ? "exact rationals" : state.floatAt !== null ? `exact → floating point at t = ${state.floatAt}` : "floating point"}</span>`);
+  if (state.period) out.push(`<span class="chip crit">periodic orbit, period ${state.period.len} (exact)</span>`);
+  if (!sim.common) out.push(`<span class="chip crit">regular bounds differ: no convergence guarantee</span>`);
+  else if (sim.dim === 1) out.push(`<span class="chip good">freezing guaranteed (Thm 5.7)</span>`);
+  else out.push(`<span class="chip good">convergence guaranteed (Thm 5.1)</span>`);
+  if (!state.period && state.tCur > last) out.push(`<span class="chip good">interaction graph frozen since t = ${last} (observed)</span>`);
+  const ti = trapInfo(sim, state.hist[state.tCur]); out.push(`<span class="chip">components at t: ${ti.nTrapped} trapped, ${ti.nFree} free</span>`);
+  el.chips.innerHTML = out.join("");
+}
+function inspect() {
+  const sim = state.sim, i = state.sel; if (i === null) { el.inspect.textContent = "Click a node in the network to inspect it."; return; }
+  const x = state.hist[state.tCur], xn = state.histN[state.tCur], ti = trapInfo(sim, x);
+  const show = v => sim.exact ? (v.d === 1n ? v.n.toString() : `${v.n}/${v.d}`.length < 60 ? `${v.n}/${v.d}` : qNum(v).toPrecision(10)) : (sim.dim === 1 ? (+v).toPrecision(8) : `(${v[0].toPrecision(6)}, ${v[1].toPrecision(6)})`);
+  const lines = [`agent ${i}  ${sim.S.has(i) ? "stubborn (σ = 0)" : `regular, σ = ${fmt(sim.sigNum[i])}, ${ti.trapped[i] ? "trapped" : "free"} component`}`, `opinion at t = ${state.tCur}: ${show(x[i])}`];
+  sim.adj[i].forEach(j => { const d = dist(sim, x[i], x[j]); const dn = sim.exact ? qNum(d) : d; lines.push(`  neighbour ${j}${sim.S.has(j) ? " (stubborn)" : ""}: distance ${dn.toPrecision(6)}${!sim.S.has(i) ? (listens(sim, x, i, j) ? "  listened to" : "  ignored") : ""}${!sim.S.has(i) && isCritical(sim, d, sim.sig[i]) ? "  [critical]" : ""}`); });
+  el.inspect.textContent = lines.join("\n");
+}
+function renderAll() {
+  el.time.max = state.tEnd; el.time.value = state.tCur; el.timeVal.textContent = `t = ${state.tCur} / ${state.tEnd}`;
+  drawNets(); chips(); inspect();
+  el.plane.classList.add("hidden"); el.traj.classList.remove("hidden");
+  if (!el["p-op"].hidden) drawTraj();
+  if (!el["p-dg"].hidden) drawDiag();
+  const [txt, ref] = NOTES[state.sim.sc]; el.caption.textContent = txt;
+  el.notes.innerHTML = `<h3>This scenario</h3><p>${txt}</p><p class="ref">${ref}</p>`;
+}
+function syncControls() {
+  const sc = el.scenario.value, explore = sc === "random";
+  el.paramM.classList.toggle("hidden", sc !== "ex74");
+  el.netControls.querySelectorAll("select, input, button").forEach(e => { e.disabled = !explore; });
+  el.d1.setAttribute("aria-pressed", String(state.dimUI === 1)); el.d2.setAttribute("aria-pressed", String(state.dimUI === 2));
+  el.arith.disabled = state.sim.dim === 2;
+}
+
+/* ---------- playback ---------- */
+let raf = null, lastT = 0, acc = 0;
+function tick(ts) {
+  if (!state.playing) return; const dt = Math.min(0.1, (ts - lastT) / 1000); lastT = ts;
+  state.phase += dt * +el.speed.value;
+  while (state.phase >= 1) { state.phase -= 1; state.tCur++; }
+  if (state.tCur >= state.tEnd) { state.tCur = state.tEnd; state.phase = 0; state.playing = false; el.play.textContent = "Play"; }
+  renderAll(); if (state.playing) raf = requestAnimationFrame(tick);
+}
+function setPlaying(p) {
+  if (p && state.tCur >= state.tEnd) { state.tCur = 0; }
+  state.phase = 0; state.playing = p; el.play.textContent = p ? "Pause" : "Play";
+  if (raf) cancelAnimationFrame(raf);
+  if (p) { lastT = performance.now(); raf = requestAnimationFrame(tick); }
+  renderAll();
+}
+
+/* ---------- wiring ---------- */
+const bindVal = (r, v, f = x => x) => { const u = () => { el[v].textContent = f(el[r].value); }; el[r].addEventListener("input", u); u(); };
+bindVal("n", "nVal"); bindVal("sigma", "sigmaVal", v => (+v).toFixed(2)); bindVal("ns", "nsVal"); bindVal("m", "mVal"); bindVal("horizon", "horizonVal"); bindVal("speed", "speedVal");
+["scenario", "gtype", "n", "sigma", "ns", "place", "seed", "conv", "arith", "m"].forEach(id => el[id].addEventListener("change", () => { setPlaying(false); rebuild(); setPlaying(true); }));
+el.horizon.addEventListener("change", () => { const T = +el.horizon.value; if (T > state.hist.length - 1) { extendTo(T); state.tEnd = activityEnd(); renderAll(); } else { setPlaying(false); rebuild(); } });
+el.reseed.addEventListener("click", () => { el.seed.value = 1 + Math.floor(Math.random() * 9999); setPlaying(false); rebuild(); setPlaying(true); });
+el.d1.addEventListener("click", () => { state.dimUI = 1; setPlaying(false); rebuild(); setPlaying(true); });
+el.d2.addEventListener("click", () => { state.dimUI = 2; setPlaying(false); rebuild(); setPlaying(true); });
+el.play.addEventListener("click", () => setPlaying(!state.playing));
+el.step.addEventListener("click", () => { setPlaying(false); if (state.tCur >= state.hist.length - 1) extendTo(state.hist.length); state.tCur++; if (state.tCur > state.tEnd) state.tEnd = state.tCur; renderAll(); });
+el.restart.addEventListener("click", () => { setPlaying(false); state.tCur = 0; renderAll(); });
+el.time.addEventListener("input", () => { setPlaying(false); state.tCur = +el.time.value; renderAll(); });
+function setView(v) {
+  state.view = v; [["op", el.vOp], ["gr", el.vGr], ["both", el.vBo]].forEach(([k, b]) => b.setAttribute("aria-pressed", String(k === v)));
+  document.querySelector(".app").classList.toggle("both", v === "both"); el.net2box.classList.toggle("hidden", v !== "both");
+  renderAll();
+}
+el.vOp.addEventListener("click", () => setView("op")); el.vGr.addEventListener("click", () => setView("gr")); el.vBo.addEventListener("click", () => setView("both"));
+el.flash.addEventListener("change", renderAll);
+el.disks.addEventListener("change", renderAll);
+["op", "dg", "nt"].forEach(k => el["tab-" + k].addEventListener("click", () => { ["op", "dg", "nt"].forEach(j => { el["tab-" + j].setAttribute("aria-selected", String(j === k)); el["p-" + j].hidden = j !== k; }); renderAll(); }));
+[el.net, el.net2].forEach(cv => cv.addEventListener("click", (ev) => {
+  const rect = cv.getBoundingClientRect(), x = ev.clientX - rect.left, y = ev.clientY - rect.top; let best = null;
+  (cv._P || []).forEach((p, i) => { const d = Math.hypot(p[0] - x, p[1] - y); if (d < 22 && (!best || d < best[0])) best = [d, i]; });
+  state.sel = best ? (state.sel === best[1] ? null : best[1]) : null; renderAll();
+}));
+window.addEventListener("resize", renderAll);
+window.addEventListener("keydown", (e) => { if (e.code === "Space" && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement)) { e.preventDefault(); setPlaying(!state.playing); } });
+if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", renderAll);
+new MutationObserver(renderAll).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+document.fonts?.ready?.then(renderAll);
+rebuild(); setView("both"); setPlaying(true);
+</script>
+</body>
+</html>

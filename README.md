@@ -4,6 +4,11 @@ Python code for the computations reported in the manuscript *Hegselmann–Krause
 
 All computations that involve critical edges (pairs at distance exactly σ) or switching of the interaction graph use exact rational arithmetic (`fractions.Fraction`), since rounding destroys ties at distance σ. All scripts use fixed random seeds. Section and table numbers refer to the manuscript.
 
+## Interactive simulator
+
+An interactive browser simulator of the dynamics, covering the examples of the manuscript and larger networks, is at
+https://mboudour.github.io/Hegselmann_Krause_with_stubborn_agents_networks/ (source: `docs/index.html`). It shows each run side by side in opinion space and on the fixed graph layout, with play, step and scrub controls.
+
 ## Requirements
 
 Python 3.10 or later and the packages in `requirements.txt` (`pygraphviz` needs the Graphviz system library).
